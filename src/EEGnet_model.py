@@ -1,0 +1,136 @@
+import copy
+
+import torch.nn as nn
+import torch
+import torch.nn.functional as F
+
+class inEEG_Net(nn.Module):
+    def __init__(self, num_classes=4, dropout1=0.52, dropout2=0.36, f1=16, sampling_rate=250, num_channels=62,
+                 depth_multiplier=6, time_of_interest=500, time_points=625, lowpass=50, point_reducer=5):
+        super(inEEG_Net, self).__init__()
+        self.conv_features = nn.Sequential(
+            nn.Conv2d(1, f1, kernel_size=(1, int(sampling_rate/2)), padding=(0, int(sampling_rate/4)), stride=1, bias=False),
+            nn.BatchNorm2d(f1, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
+            nn.Conv2d(f1, f1*depth_multiplier, kernel_size=(num_channels, 1), stride=(1, 1), groups=f1, bias=False), #kernel_size=(22, 1)
+            nn.BatchNorm2d(f1*depth_multiplier, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
+            nn.ELU(alpha=1.0),
+            #nn.AdaptiveAvgPool2d(output_size=(1, 28)),
+            nn.AvgPool2d(kernel_size=(1, int(sampling_rate/lowpass))),
+            nn.Dropout(p=dropout1, inplace=False),
+            nn.Conv2d(f1*depth_multiplier, f1*depth_multiplier, kernel_size=(1, int(lowpass*(time_of_interest/1000))), stride=(1, 1), padding=(0, int(lowpass*(time_of_interest/2000))), groups=f1*depth_multiplier, bias=False),
+            nn.Conv2d(f1*depth_multiplier, f1*depth_multiplier, kernel_size=(1, 1), stride=(1, 1), bias=False),
+            nn.ELU(alpha=1.0),
+            #nn.AdaptiveAvgPool2d(output_size=(1, 7)),
+            nn.AvgPool2d(kernel_size=(1, point_reducer)),
+            nn.Dropout(p=dropout2, inplace=False)
+        )
+        self.out_features = nn.Sequential(
+            nn.Flatten(),
+            #nn.Linear(in_features=int(time_points/8/32*sampling_rate*f1*depth_multiplier), out_features=num_classes, bias=True)
+            nn.Linear(in_features=int(f1*depth_multiplier*time_points/point_reducer/sampling_rate*lowpass), out_features=num_classes, bias=True)
+        )
+    def forward(self,x):
+        x = self.conv_features(x)
+        #print(x.shape)
+        x = self.out_features(x)
+        return x
+
+
+
+
+def train(model, optimizer, loss_fn, train_loader, val_loader=None, epochs=2, device="cpu", logging=True):
+    best_acc = 0.0
+    best_model = model.state_dict()
+    for epoch in range(1, epochs+1):
+        training_loss = 0.0
+        valid_loss = 0.0
+        model.train()
+        for batch in train_loader:
+            optimizer.zero_grad()
+            inputs, targets = batch
+            inputs = inputs.to(device=device, dtype=torch.float)
+            targets = targets.type(torch.LongTensor)
+            targets = targets.to(device=device)
+            output = model(inputs)
+            loss = loss_fn(output, targets)
+            loss.backward()
+            # run['metrics/train_loss'].log(loss)
+            optimizer.step()
+            training_loss += loss.data.item() * inputs.size(0)
+        training_loss /= len(train_loader.dataset)
+        model.eval()
+        num_correct = 0
+        num_examples = 0
+        if val_loader is not None:
+            for batch in val_loader:
+                inputs, targets = batch
+                # inputs = inputs.view(64,1,22,-1)
+                inputs = inputs.to(device=device, dtype=torch.float)
+                output = model(inputs)
+                targets = targets.type(torch.LongTensor)
+                targets = targets.to(device=device)
+                loss = loss_fn(output, targets)
+                valid_loss += loss.data.item() * inputs.size(0)
+                correct = torch.eq(torch.max(F.softmax(output, dim=1), dim=1)[1], targets)
+                num_correct += torch.sum(correct).item()
+                num_examples += correct.shape[0]
+            valid_loss /= len(val_loader.dataset)
+            # run["training/batch/acc"].log(num_correct / num_examples)
+            if (num_correct / num_examples > best_acc):
+                best_model = copy.deepcopy(model)
+                best_acc = num_correct / num_examples
+
+            if logging:
+                print('Epoch: {}, Training Loss: {:.2f}, Validation Loss: {:.2f}, accuracy = {:.2f}'.format(epoch, training_loss, valid_loss, num_correct / num_examples))
+        else:
+            if logging:
+                print('Epoch: {}, Training Loss: {:.2f}'.format(epoch, training_loss))
+    return best_model, best_acc
+
+
+def single_batch_train(model, optimizer, loss_fn, batch, val_loader=None, epochs=2, device="cpu", logging=True):
+    best_acc = 0.0
+    best_model = model.state_dict()
+    for epoch in range(1, epochs+1):
+        training_loss = 0.0
+        valid_loss = 0.0
+        model.train()
+        optimizer.zero_grad()
+        inputs, targets = batch
+        inputs = inputs.to(device=device, dtype=torch.float)
+        targets = targets.type(torch.LongTensor)
+        targets = targets.to(device=device)
+        output = model(inputs)
+        loss = loss_fn(output, targets)
+        loss.backward()
+        # run['metrics/train_loss'].log(loss)
+        optimizer.step()
+        training_loss += loss.data.item() * inputs.size(0)
+        model.eval()
+        num_correct = 0
+        num_examples = 0
+        if val_loader is not None:
+            for batch in val_loader:
+                inputs, targets = batch
+                # inputs = inputs.view(64,1,22,-1)
+                inputs = inputs.to(device=device, dtype=torch.float)
+                output = model(inputs)
+                targets = targets.type(torch.LongTensor)
+                targets = targets.to(device=device)
+                loss = loss_fn(output, targets)
+                valid_loss += loss.data.item() * inputs.size(0)
+                correct = torch.eq(torch.max(F.softmax(output, dim=1), dim=1)[1], targets)
+                num_correct += torch.sum(correct).item()
+                num_examples += correct.shape[0]
+            valid_loss /= len(val_loader.dataset)
+            # run["training/batch/acc"].log(num_correct / num_examples)
+            if (num_correct / num_examples > best_acc):
+                best_model = copy.deepcopy(model)
+                best_acc = num_correct / num_examples
+
+            if logging:
+                print('Epoch: {}, Training Loss: {:.2f}, Validation Loss: {:.2f}, accuracy = {:.2f}'.format(epoch, training_loss, valid_loss, num_correct / num_examples))
+        else:
+            if logging:
+                print('Epoch: {}, Training Loss: {:.2f}'.format(epoch, training_loss))
+    return best_model, best_acc
