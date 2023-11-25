@@ -14,28 +14,61 @@ class inEEG_Net(nn.Module):
             nn.Conv2d(f1, f1*depth_multiplier, kernel_size=(num_channels, 1), stride=(1, 1), groups=f1, bias=False), #kernel_size=(22, 1)
             nn.BatchNorm2d(f1*depth_multiplier, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
             nn.ELU(alpha=1.0),
-            #nn.AdaptiveAvgPool2d(output_size=(1, 28)),
+            # nn.AdaptiveAvgPool2d(output_size=(1, 28)),
             nn.AvgPool2d(kernel_size=(1, int(sampling_rate/lowpass))),
             nn.Dropout(p=dropout1, inplace=False),
             nn.Conv2d(f1*depth_multiplier, f1*depth_multiplier, kernel_size=(1, int(lowpass*(time_of_interest/1000))), stride=(1, 1), padding=(0, int(lowpass*(time_of_interest/2000))), groups=f1*depth_multiplier, bias=False),
             nn.Conv2d(f1*depth_multiplier, f1*depth_multiplier, kernel_size=(1, 1), stride=(1, 1), bias=False),
             nn.ELU(alpha=1.0),
-            #nn.AdaptiveAvgPool2d(output_size=(1, 7)),
+            # nn.AdaptiveAvgPool2d(output_size=(1, 7)),
             nn.AvgPool2d(kernel_size=(1, point_reducer)),
             nn.Dropout(p=dropout2, inplace=False)
         )
         self.out_features = nn.Sequential(
             nn.Flatten(),
-            #nn.Linear(in_features=int(time_points/8/32*sampling_rate*f1*depth_multiplier), out_features=num_classes, bias=True)
+            # nn.Linear(in_features=int(time_points/8/32*sampling_rate*f1*depth_multiplier),
+            # out_features=num_classes, bias=True)
             nn.Linear(in_features=int(f1*depth_multiplier*time_points/point_reducer/sampling_rate*lowpass), out_features=num_classes, bias=True)
         )
+        self.defined_params = {
+            'model_type': 'inEEG_Net',
+            'num_classes': num_classes,
+            'dropout1': dropout1,
+            'dropout2': dropout2,
+            'f1': f1,
+            'sampling_rate': sampling_rate,
+            'num_channels': num_channels,
+            'depth_multiplier': depth_multiplier,
+            'time_of_interest': time_of_interest,
+            'time_points': time_points,
+            'lowpass': lowpass,
+            'point_reducer': point_reducer
+        }
+
     def forward(self,x):
         x = self.conv_features(x)
-        #print(x.shape)
+        # print(x.shape)
         x = self.out_features(x)
         return x
 
 
+def model_from_params(params: dict):
+    """
+
+    :param params: dict with model params in this lib all models have model.defined_params, from which they can be
+     recreated with untrained weights
+    :return: model which has defined params and type
+
+    """
+    if params['model_type'] == 'inEEG_net':
+        model = inEEG_Net(num_classes=params['num_classes'], dropout1=params['dropout1'], dropout2=params['dropout2'],
+                          f1=params['f1'], sampling_rate=params['sampling_rate'], num_channels=params['num_channels'],
+                          depth_multiplier=params['depth_multiplier'], time_of_interest=params['time_of_interest'],
+                          time_points=params['time_points'], lowpass=params['lowpass'],
+                          point_reducer=params['point_reducer'])
+    else:
+        raise ValueError('model_class is not defined')
+    return model
 
 
 def train(model, optimizer, loss_fn, train_loader, val_loader=None, epochs=2, device="cpu", logging=True):

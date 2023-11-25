@@ -18,6 +18,7 @@ def data_from_windows_dataset(dataset: braindecode.datasets.base.BaseConcatDatas
     :param test_size: size of test data which vil contain equal datapoints of each class and will be taken from the end
      of dataset
     :return: name of dataset (str)
+    :
     """
     X = []
     Y = []
@@ -102,8 +103,8 @@ def BCI_IV_pretrain(trial):
             # Interpolate between current weights and trained weights from this task
             # I.e. (weights_before - weights_after) is the meta-gradient
             weights_after = model.state_dict()
-            outerstepsize = params['outerstepsize0'] * (1 - iteration / params['oterepochs']) # linear schedule
-            outerstepsize1 = params['outerstepsize1'] * (1 - iteration / params['oterepochs']) # linear schedule
+            outerstepsize = params['outerstepsize0'] * (1 - iteration / params['oterepochs'])  # linear schedule
+            outerstepsize1 = params['outerstepsize1'] * (1 - iteration / params['oterepochs'])  # linear schedule
             model.load_state_dict({name: weights_before[name] + (weights_after[name] - weights_before[name]) * outerstepsize if name.startswith('conv_features') else weights_before[name] + (weights_after[name] - weights_before[name]) * outerstepsize1 for name in weights_before})
 
 
@@ -124,5 +125,25 @@ def BCI_IV_pretrain(trial):
     return stat/len(test_subjs)
 
 def meta_params():
+    p = 1
+    path = pathlib.Path(pathlib.Path.cwd(), 'Lee_data')
+    while os.path.exists(pathlib.Path(path, 'params' + str(p))):
+        p += 1
+    os.mkdir(pathlib.Path(path, 'params' + str(p)))
+    path = pathlib.Path(path, 'params' + str(p))
+    file_path = "./Lee_data/params" + str(p) + "/journal.log"
+    lock_obj = optuna.storages.JournalFileOpenLock("./Lee_data/params" + str(p) + "/journal.log")
+
+    storage = optuna.storages.JournalStorage(
+        optuna.storages.JournalFileStorage(file_path, lock_obj=lock_obj),
+    )
+    #progress = []
+    #manager = enlighten.get_manager()
+    #for i in range(15):
+    #    progress.append(manager.counter(total=350, desc='Trial -1', unit="Epochs", color="green"))
+    #func = lambda trial: simple_pretrain(trial, progress=progress)
+    study = optuna.create_study(storage=storage, study_name='optuna_meta_params', direction='maximize', load_if_exists=True)
+    study.optimize(BCI_IV_pretrain, n_trials=50, n_jobs=4)
+    joblib.dump(study, pathlib.Path(path, 'optuna_meta_params.pkl'))
 
     return params
