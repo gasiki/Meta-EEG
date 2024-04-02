@@ -1,10 +1,20 @@
 import copy
-
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
+
 class inEEG_Net(nn.Module):
+    """
+    References
+    ----------
+    [EEGNet4] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon,
+       S. M., Hung, C. P., & Lance, B. J. (2018).
+       EEGNet: A Compact Convolutional Network for EEG-based
+       Brain-Computer Interfaces.
+       arXiv preprint arXiv:1611.08024.
+    """
+
     def __init__(self, num_classes=4, dropout1=0.52, dropout2=0.36, f1=16, sampling_rate=250, num_channels=62,
                  depth_multiplier=6, time_of_interest=500, time_points=625, lowpass=50, point_reducer=5):
         super(inEEG_Net, self).__init__()
@@ -54,11 +64,9 @@ class inEEG_Net(nn.Module):
 
 def model_from_params(params: dict):
     """
-
-    :param params: dict with model params in this lib all models have model.defined_params, from which they can be
-     recreated with untrained weights
-    :return: model which has defined params and type
-
+    :param - params: dict with model params in this lib all models have model.defined_params, from which they can be
+    recreated with untrained weights
+    :return: - model which has defined params and type
     """
     if params['model_type'] == 'inEEG_net':
         model = inEEG_Net(num_classes=params['num_classes'], dropout1=params['dropout1'], dropout2=params['dropout2'],
