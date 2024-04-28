@@ -1,6 +1,6 @@
 {"dataset":
 {"subject_ids": [1, 2],
-  "dataset_name": "BCI_IV_2a",
+  "experiment_name": "BCI_IV_2a_test",
   "test_size": 0.2,
   "pretrain_sub": [2],
   "val_sub": [2],
