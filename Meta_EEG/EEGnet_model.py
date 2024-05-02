@@ -55,7 +55,7 @@ class inEEG_Net(nn.Module):
             'point_reducer': point_reducer
         }
 
-    def forward(self,x):
+    def forward(self, x):
         x = self.conv_features(x)
         # print(x.shape)
         x = self.out_features(x)
