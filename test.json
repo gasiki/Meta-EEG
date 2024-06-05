@@ -1,18 +1,20 @@
 {"dataset":
-{"subject_ids": [1, 2],
+{"subject_ids": [1, 2, 3, 4],
   "experiment_name": "BCI_IV_2a_test",
   "test_size": 0.2,
-  "pretrain_sub": [2],
+  "pretrain_sub": [1,2],
   "val_sub": [2],
-  "target_sub": [2]
+  "target_sub": [3,4]
 },
   "double_meta_step": false,
   "meta_optimizer": false,
-  "pretrain_trials": 1,
-  "pretrain_jobs": 1,
-  "aftrain_trials": 1,
+  "pretrain_trials": 5,
+  "pretrain_jobs": 2,
+  "meta_jobs": 3,
+  "aftrain_trials": 2,
   "aftrain_jobs": 1,
-  "aftrain_iterations": 1,
+  "aftrain_iterations": 2,
+  "last_layer": true,
   "model":
   {
     "model_type": "inEEG_net",
@@ -24,7 +26,7 @@
     "num_channels": 22,
     "depth_multiplier": 6,
     "time_of_interest": 500,
-    "time_points": 1000,
+    "time_points": 1125,
     "lowpass": 50,
     "point_reducer": 5
   }

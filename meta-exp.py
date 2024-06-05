@@ -8,7 +8,7 @@ def main(inputs_file):
     with open(str(inputs_file) + '.json', 'r') as f:
         config = json.load(f)
     experiment_name = me.experiment_storage(experiment_name=config['dataset']["experiment_name"])
-    dataset = me.MetaDataset(dataset_name='bci_iv_2a')
+    dataset = me.MetaDataset(dataset_name='bci_iv_2a', subjects=config['dataset']['subject_ids'])
     dataset.load_data('data_BCI_IV_2a')
     print('Dataset ' + dataset.dataset_name + ' loaded.')
     model = me.model_from_params(config['model'])
@@ -17,35 +17,35 @@ def main(inputs_file):
                             trials=config['pretrain_trials'], jobs=config['pretrain_jobs'],
                             double_meta_step=config['double_meta_step'],
                             meta_optimizer=config['meta_optimizer'], experiment_name=experiment_name)
-    if inputs_file == 'test':
-        print('Test params are used')
-        params = {
-            'innerepochs': 2,
-            'oterepochs': 2,
-            'outerstepsize0': 0.745,
-            'in_lr': 0.0017,
-            'in_datasamples': 2
-        }
+    #if inputs_file == 'test':
+    #    print('Test params are used')
+    #    params = {
+    #        'innerepochs': 10,
+    #        'oterepochs': 20,
+    #        'outerstepsize0': 0.745,
+    #        'in_lr': 0.0017,
+    #        'in_datasamples': 20
+    #    }
     pretraining_subjects = config['dataset']['target_sub'] + config['dataset']['val_sub']
-    pretraining_auc = me.meta_train(params=params, model=model, all_subjects=config['dataset']['subject_ids'],
-                                    target_sub=pretraining_subjects, metadataset=dataset,
-                                    meta_optimizer=config['meta_optimizer'], experiment_name=experiment_name)
+    pretraining_auc = me.meta_exp(params=params, model=model, target_sub=pretraining_subjects, metadataset=dataset,
+                                  meta_optimizer=config['meta_optimizer'], num_workers=config['meta_jobs'],
+                                  experiment_name=experiment_name)
     shutil.make_archive('models_for_' + str(inputs_file), 'zip', str(experiment_name) + '/models')
     print('Pretraining completed. Mean auc for pretraining: ' + str(pretraining_auc))
     af_params = me.aftrain_params(metadataset=dataset, model=model,
                                   tst_subj=config['dataset']['val_sub'],
                                   trials=config['aftrain_trials'], jobs=config['aftrain_jobs'],
-                                  experiment_name=experiment_name)
+                                  experiment_name=experiment_name, last_layer=config['last_layer'])
     if inputs_file == 'test':
         print('Test af_params are used')
         af_params = {
             'lr': 0.0005,
-            'a_ep': 2,
+            'a_ep': 4,
             'b_ep': 0
         }
     me.aftrain(target_sub=config['dataset']['target_sub'], model=model,
                af_params=af_params, metadataset=dataset, iterations=config['aftrain_iterations'],
-               experiment_name=experiment_name)
+               experiment_name=experiment_name, last_layer=config['last_layer'])
     shutil.make_archive('results_for_' + str(inputs_file), 'zip', str(experiment_name))
 
 

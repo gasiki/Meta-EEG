@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import pickle
 import zipfile as zp
 import os
@@ -40,7 +40,7 @@ class MetaDataset:
     def __init__(self, dataset_name: str, subjects: list = None, description: str = None):
         self.dataset_name = dataset_name
         if subjects is None:
-            subjects = []
+            self.subjects = []
         else:
             self.subjects = subjects
         if description is None:
@@ -54,16 +54,20 @@ class MetaDataset:
             raise ValueError('Dataset filename not provided')
         if not os.path.isfile(filename + '.zip'):
             raise ValueError('Specified filename does not exist')
-        if logging: print('Dataset found')
+        if logging:
+            print('Dataset found')
         with zp.ZipFile(filename + '.zip') as zf:
-            if logging: print('dataset file contains: ' + str(zf.namelist()))
+            if logging:
+                print('dataset file contains: ' + str(zf.namelist()))
             with zf.open("subjects.pkl", "r") as fp:
                 self.subjects = pickle.load(fp)
-            if logging: print('subjects loaded: ' + str(self.subjects))
+            if logging:
+                print('subjects loaded: ' + str(self.subjects))
             if 'description.txt' in zf.namelist():
                 with zf.open("description.txt", "r") as fp:
                     self.description = fp.read()
-                if logging: print('description loaded: ' + str(self.description))
+                if logging:
+                    print('description loaded: ' + str(self.description))
             else:
                 self.description = 'Description not provided'
             for subject in self.subjects:
@@ -81,18 +85,14 @@ class MetaDataset:
             raise ValueError('Specified dataset already exists')
         else:
             with zp.ZipFile(filename + '.zip', 'w') as zf:
-                zf.write('subjects.pkl')
                 with zf.open("subjects.pkl", "w") as fp:
-                    pickle.dump(self.subjects,fp)
-                zf.write('description.txt')
+                    pickle.dump(self.subjects, fp)
                 with zf.open("description.txt", "w") as fp:
                     fp.write(self.description.encode('utf-8'))
                 for subject in self.subjects:
-                    zf.write('subj_' + str(subject) + '/test_data.pkl')
                     with zf.open('subj_' + str(subject) + '/test_data.pkl', 'w') as fp:
                         self.data[subject]['test'].to_pickle(fp)
-                    zf.write('subj_' + str(subject) + '/train_data.pkl')
-                    with zf.open('subj_' + str(subject) + '/train_data.pkl') as fp:
+                    with zf.open('subj_' + str(subject) + '/train_data.pkl', 'w') as fp:
                         self.data[subject]['train'].to_pickle(fp)
 
     def add_subject_from_xy(self, subject_id: int, x: list, y: list, test_size: float = 0.2, rewrite: bool = False):
@@ -122,11 +122,32 @@ class MetaDataset:
         test_data = self.data[subj]['test']
         return SubjDataset(train_data), SubjDataset(val_data), SubjDataset(test_data)
 
-    def all_data_subj(self, subj: int):
+    def all_data_subj(self, subj: int, n: int, mode='epoch', early_stopping=0):
+        tasks = []
+        val = None
         if subj not in self.subjects:
             raise ValueError('Specified subject does not exist in this dataset')
-        data = pd.concat([self.data[subj]['train'], self.data[subj]['test']], ignore_index=True)
-        return SubjDataset(data)
+        if early_stopping == 0:
+            dat = pd.concat([self.data[subj]['train'], self.data[subj]['test']], ignore_index=True)
+        else:
+            dat = pd.concat([self.data[subj]['train'], self.data[subj]['test']], ignore_index=True)
+            val = dat.sample(frac=0.1)
+            dat = dat.drop(val.index)
+            val = SubjDataset(val)
+        if mode == 'epoch':
+            tasks.append(SubjDataset(dat))
+        elif mode == 'batch':
+            dat = dat.sample(frac=1)
+            data_len = int(len(dat)/n)
+            for i in range(data_len):
+                a = i*n
+                b = n*(i+1)
+                tasks.append(SubjDataset(dat[a:b]))
+        elif mode == 'single_batch':
+            tasks.append(SubjDataset(dat.sample(n)))
+        else:
+            raise ValueError('incorrect meta-learning mode specified')
+        return tasks, val
 
     def test_data_subj(self, subj: int):
         if subj not in self.subjects:
@@ -138,6 +159,12 @@ class MetaDataset:
         using_subjects = deepcopy(subjects)
         using_subjects.remove(subj)
         for sub in using_subjects:
+            data = pd.concat([data, self.data[sub]['train']], ignore_index=True)
+        return SubjDataset(data)
+
+    def multiple_data(self, subjects):
+        data = pd.DataFrame()
+        for sub in subjects:
             data = pd.concat([data, self.data[sub]['train']], ignore_index=True)
         return SubjDataset(data)
 
@@ -157,10 +184,3 @@ class MetaDataset:
             return SubjDataset(train_data), SubjDataset(test_data)
         else:
             return train_data.to_numpy(copy=True), test_data.to_numpy(copy=True)
-
-
-
-
-
-
-
