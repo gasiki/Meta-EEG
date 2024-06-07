@@ -200,7 +200,7 @@ def meta_params(metadataset: MetaDataset, tr_sub: list, tst_sub: list, model, tr
 
 
 def meta_train(params: dict, model, metadataset: MetaDataset, wal_sub, path, name: str = None,   # TODO baseline diss DONE
-               mode='single_batch',meta_optimizer=False, subjects: list = None, loging=True, baseline=True,
+               mode='single_batch', meta_optimizer=False, subjects: list = None, loging=True, baseline=True,
                early_stopping=0):
     if name is None:
         name = str(wal_sub)

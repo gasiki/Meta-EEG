@@ -22,36 +22,47 @@ def experiment_storage(experiment_name: str):
 
 
 class SubjDataset(Dataset):   # create train dataset for one of subjects
-    def __init__(self, data):
-        x = []
-        for a in data['X']:
-            x.append(a.transpose(0, 1)[np.newaxis, :, :])
-        self.inputs = x
+    def __init__(self, data, meta_dataset_name):
+        self.name = meta_dataset_name
+        data = data.reset_index(drop=True)
+        self.data = data['X']
         self.targets = data['Y'].values
 
     def __len__(self):
         return len(self.targets)
 
     def __getitem__(self, idx):
-        return self.inputs[idx], self.targets[idx]
+        filename = 'data_' + self.name
+        pos = self.data[idx].split(',')
+        with zp.ZipFile(filename + '.zip') as zf:
+            pt = 'subj_' + str(pos[0]) + '/' + str(pos[1]) + '.pkl'
+            with zf.open(pt, mode='r') as f:
+                inputs = np.load(f)
+        inputs = inputs.transpose(0, 1)[np.newaxis, :, :]
+        return inputs, self.targets[idx]
 
 
 class MetaDataset:
-    def __init__(self, dataset_name: str, subjects: list = None, description: str = None):
-        self.dataset_name = dataset_name
-        if subjects is None:
+    def __init__(self, dataset_name: str, description: str = None):
+        if os.path.isfile('data_' + dataset_name + '.zip'):
+            print('loading existing_dataset from: data_' + dataset_name + '.zip')
+            self.dataset_name = dataset_name
+            self.data = {}
             self.subjects = []
+            self.load_data()
         else:
-            self.subjects = subjects
-        if description is None:
-            self.description = 'Description not provided'
-        else:
-            self.description = description
-        self.data = {}
+            print('creating new empty dataset: ' + str(dataset_name))
+            self.dataset_name = dataset_name
+            self.subjects = []
+            if description is None:
+                self.description = 'Description not provided'
+            else:
+                self.description = description
+            self.data = {}
+            self.save_data()
 
-    def load_data(self, filename: str | None = None, logging=False):
-        if filename is None:
-            raise ValueError('Dataset filename not provided')
+    def load_data(self, logging=False):
+        filename = 'data_' + self.dataset_name
         if not os.path.isfile(filename + '.zip'):
             raise ValueError('Specified filename does not exist')
         if logging:
@@ -65,7 +76,7 @@ class MetaDataset:
                 print('subjects loaded: ' + str(self.subjects))
             if 'description.txt' in zf.namelist():
                 with zf.open("description.txt", "r") as fp:
-                    self.description = fp.read()
+                    self.description = fp.read().decode('utf-8')
                 if logging:
                     print('description loaded: ' + str(self.description))
             else:
@@ -74,36 +85,61 @@ class MetaDataset:
                 if 'subj_' + str(subject) + '/test_data.pkl' in zf.namelist():
                     self.data[subject] = {}
                     with zf.open('subj_' + str(subject) + '/test_data.pkl') as fp:
-                        self.data[subject]['test'] = pd.read_pickle(fp)
+                        self.data[subject]['test'] = pd.read_pickle(fp)  # TODO resolve
                     with zf.open('subj_' + str(subject) + '/train_data.pkl') as fp:
                         self.data[subject]['train'] = pd.read_pickle(fp)
                 else:
                     raise ValueError('Specified subject does not exist or dataset is broken')
 
-    def save_data(self, filename: str):
-        if os.path.isfile(filename + '.zip'):
+    def save_data(self, subject=False, subject_data=None):
+        filename = 'data_' + self.dataset_name
+        if os.path.isfile(filename + '.zip') and not subject:
             raise ValueError('Specified dataset already exists')
         else:
-            with zp.ZipFile(filename + '.zip', 'w') as zf:
-                with zf.open("subjects.pkl", "w") as fp:
-                    pickle.dump(self.subjects, fp)
-                with zf.open("description.txt", "w") as fp:
-                    fp.write(self.description.encode('utf-8'))
-                for subject in self.subjects:
-                    with zf.open('subj_' + str(subject) + '/test_data.pkl', 'w') as fp:
-                        self.data[subject]['test'].to_pickle(fp)
-                    with zf.open('subj_' + str(subject) + '/train_data.pkl', 'w') as fp:
-                        self.data[subject]['train'].to_pickle(fp)
-
-    def add_subject_from_xy(self, subject_id: int, x: list, y: list, test_size: float = 0.2, rewrite: bool = False):
-        if subject_id in self.subjects:
-            if rewrite:
-                self.subjects.remove(subject_id)
+            if subject:
+                print('updating the dataset with subject ' + str(self.subjects[-1]))
+                with zp.ZipFile(filename + '_new.zip', 'w') as zf:
+                    with zf.open("subjects.pkl", "w") as fp:
+                        pickle.dump(self.subjects, fp)
+                    with zf.open("description.txt", "w") as fp:
+                        fp.write(self.description.encode('utf-8'))
+                    subj = self.subjects[-1]
+                    with zf.open('subj_' + str(subj) + '/test_data.pkl', 'w') as fp:
+                        self.data[subj]['test'].to_pickle(fp)
+                    with zf.open('subj_' + str(subj) + '/train_data.pkl', 'w') as fp:
+                        self.data[subj]['train'].to_pickle(fp)
+                    for data in subject_data:
+                        with zf.open('subj_' + str(subj) + '/' + str(data['id']) + '.pkl', 'w') as fp:
+                            np.save(fp, data['data'])
+                    zp_in = zp.ZipFile(filename + '.zip', 'r')
+                    for sub in self.subjects[:-1]:
+                        sub_path = 'subj_{}/'.format(str(sub))
+                        for name in zp_in.namelist():
+                            if name.startswith(sub_path):
+                                buffer = zp_in.read(name)
+                                zf.writestr(name, buffer)
+                    zp_in.close()
+                os.remove(filename + '.zip')
+                os.rename(filename + '_new.zip', filename + '.zip')
             else:
-                raise ValueError('Specified subject already exists')
+                with zp.ZipFile(filename + '.zip', 'w') as zf:
+                    with zf.open("subjects.pkl", "w") as fp:
+                        pickle.dump(self.subjects, fp)
+                    with zf.open("description.txt", "w") as fp:
+                        fp.write(self.description.encode('utf-8'))
+
+    def add_subject_from_xy(self, subject_id: int, x: list, y: list, test_size: float = 0.2):
+        if subject_id in self.subjects:
+            raise ValueError('Specified subject already exists')
         self.subjects.append(subject_id)
         self.data[subject_id] = {}
-        data_dict = {'X': x, 'Y': y}
+        subj_data = []
+        x_id = []
+        for i in range(len(x)):
+            dat = {'id': i, 'data': x[i]}
+            x_id.append('{},{}'.format(subject_id, i))
+            subj_data.append(dat)
+        data_dict = {'X': x_id, 'Y': y}
         n = len(list(set(y)))
         df = pd.DataFrame.from_dict(data_dict)
         t_n = int(len(df.index) * test_size / n)
@@ -112,15 +148,17 @@ class MetaDataset:
             test_data.append(df.loc[df['Y'] == i][-t_n:])
         self.data[subject_id]['test'] = pd.concat(test_data)
         self.data[subject_id]['train'] = df.drop(self.data[subject_id]['test'].index)
+        self.save_data(subject=True, subject_data=subj_data)
 
-    def part_data_subj(self, subj: int, rs: int, n: int = 1):
+    def part_data_subj(self, subj: int, rs: int = 42, n: int = 1):
         if subj not in self.subjects:
             raise ValueError('Specified subject does not exist in this dataset')
         data = self.data[subj]['train']
         train_data = data.sample(n=n, random_state=rs)
         val_data = data.drop(train_data.index)
         test_data = self.data[subj]['test']
-        return SubjDataset(train_data), SubjDataset(val_data), SubjDataset(test_data)
+        return (SubjDataset(train_data, self.dataset_name), SubjDataset(val_data, self.dataset_name),
+                SubjDataset(test_data, self.dataset_name))
 
     def all_data_subj(self, subj: int, n: int, mode='epoch', early_stopping=0):
         tasks = []
@@ -133,18 +171,18 @@ class MetaDataset:
             dat = pd.concat([self.data[subj]['train'], self.data[subj]['test']], ignore_index=True)
             val = dat.sample(frac=0.1)
             dat = dat.drop(val.index)
-            val = SubjDataset(val)
+            val = SubjDataset(val, self.dataset_name)
         if mode == 'epoch':
-            tasks.append(SubjDataset(dat))
+            tasks.append(SubjDataset(dat, self.dataset_name))
         elif mode == 'batch':
             dat = dat.sample(frac=1)
             data_len = int(len(dat)/n)
             for i in range(data_len):
                 a = i*n
                 b = n*(i+1)
-                tasks.append(SubjDataset(dat[a:b]))
+                tasks.append(SubjDataset(dat[a:b], self.dataset_name))
         elif mode == 'single_batch':
-            tasks.append(SubjDataset(dat.sample(n)))
+            tasks.append(SubjDataset(dat.sample(n), self.dataset_name))
         else:
             raise ValueError('incorrect meta-learning mode specified')
         return tasks, val
@@ -152,7 +190,7 @@ class MetaDataset:
     def test_data_subj(self, subj: int):
         if subj not in self.subjects:
             raise ValueError('Specified subject does not exist in this dataset')
-        return SubjDataset(self.data[subj]['test'])
+        return SubjDataset(self.data[subj]['test'], self.dataset_name)
 
     def other_data_subj(self, subj, subjects):
         data = pd.DataFrame()
@@ -160,13 +198,13 @@ class MetaDataset:
         using_subjects.remove(subj)
         for sub in using_subjects:
             data = pd.concat([data, self.data[sub]['train']], ignore_index=True)
-        return SubjDataset(data)
+        return SubjDataset(data, self.dataset_name)
 
     def multiple_data(self, subjects):
         data = pd.DataFrame()
         for sub in subjects:
             data = pd.concat([data, self.data[sub]['train']], ignore_index=True)
-        return SubjDataset(data)
+        return SubjDataset(data, self.dataset_name)
 
     def last_n_data_subj(self, subj, train: int, rs=42, return_dataset=True):
         if subj not in self.subjects:
@@ -181,6 +219,6 @@ class MetaDataset:
                                     data.loc[data['Y'] == i].sample(n=int(train/n), random_state=rs)])
         test_data = self.data[subj]['test']
         if return_dataset:
-            return SubjDataset(train_data), SubjDataset(test_data)
+            return SubjDataset(train_data, self.dataset_name), SubjDataset(test_data, self.dataset_name)
         else:
             return train_data.to_numpy(copy=True), test_data.to_numpy(copy=True)

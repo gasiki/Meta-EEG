@@ -183,5 +183,10 @@ load_data.py
 models*
 wtf*
 .gpu_stats.tsv
+load*
+data*
+lee_test.py
+lee_test_config.yaml
+test_noteboock.ipynb
 
 
