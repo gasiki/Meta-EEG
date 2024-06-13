@@ -63,8 +63,8 @@ def meta_learner(model, task, epochs: int, batch_size: int, in_epochs: int, opti
     for iteration in range(epochs):
         meta_weights = deepcopy(model.state_dict())
         # Do SGD on this task
-        task_len = len(task)
-        for j in range(len(task[0])):
+        task_len = len(task[0])
+        for j in range(task_len):
             weights_before = deepcopy(meta_weights)
             for i in range(len(task)):
                 dat = DataLoader(task[i][j], batch_size=n, drop_last=False, shuffle=False)
@@ -82,7 +82,7 @@ def meta_learner(model, task, epochs: int, batch_size: int, in_epochs: int, opti
                                          meta_weights=meta_weights, outestepsize=lr1,
                                          outestepsize1=lr2, epochs=epochs,
                                          iteration=iteration, meta_optimizer=meta_optimizer, model=model,
-                                         task_len=len(task[i][j]))
+                                         task_len=len(task[i][j]) * len(task[i]))   # fixme size of task?
             if early_stopping != 0:
                 stat = 0.0
                 model.load_state_dict(meta_weights)
@@ -99,6 +99,9 @@ def meta_learner(model, task, epochs: int, batch_size: int, in_epochs: int, opti
                         stat += torch.sum(correct).item() / len(targets)
                 stat = stat / len(val)
                 if stat > best_stat:
+                    print('in process ' + str(multiprocessing.current_process().name) +
+                          '\nnew best stat: {}, on epoch: {}/{}, batch: {}/{}'.format(stat, iteration, epochs,
+                                                                                      j, task_len))
                     best_stat = stat
                     flag = 0
                 elif flag == 0:
@@ -199,7 +202,7 @@ def meta_params(metadataset: MetaDataset, tr_sub: list, tst_sub: list, model, tr
     return params
 
 
-def meta_train(params: dict, model, metadataset: MetaDataset, wal_sub, path, name: str = None,   # TODO baseline diss DONE
+def meta_train(params: dict, model, metadataset: MetaDataset, wal_sub, path, name: str = None,
                mode='single_batch', meta_optimizer=False, subjects: list = None, loging=True, baseline=True,
                early_stopping=0):
     if name is None:
@@ -225,7 +228,7 @@ def meta_train(params: dict, model, metadataset: MetaDataset, wal_sub, path, nam
     val_task = []
     for i in range(len(subjects)):
         train_tasks, val = metadataset.all_data_subj(subj=subjects[i], n=n, mode=mode, early_stopping=early_stopping)
-        task_t.append(train_tasks)  # todo size of meta batches
+        task_t.append(train_tasks)  # todo move dataloading to meta-learner
         val_task.append(val)
     model = meta_learner(model, task_t, params['oterepochs'], n, params['innerepochs'], optimizer, meta_optimizer,
                          params['outerstepsize0'], params['outerstepsize1'], device, mode, early_stopping, val=val_task)
@@ -250,7 +253,7 @@ def meta_train(params: dict, model, metadataset: MetaDataset, wal_sub, path, nam
         data = metadataset.multiple_data(subjects)
         data = DataLoader(data, batch_size=64, drop_last=True, shuffle=True)
         best_model, best_acc = train(model, optim, torch.nn.CrossEntropyLoss(), data,
-                                     epochs=params['innerepochs'] * params['oterepochs'], device=device, logging=False)
+                                     epochs=params['innerepochs'] * params['oterepochs'], device=device, logging=loging)
         torch.save(model.state_dict(), (path + name + "-baseline.pkl"))
         test_data = metadataset.test_data_subj(subj=wal_sub)
         test_data_loader = DataLoader(test_data, batch_size=500, drop_last=False, shuffle=False)

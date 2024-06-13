@@ -188,5 +188,7 @@ data*
 lee_test.py
 lee_test_config.yaml
 test_noteboock.ipynb
+tmp*
+exp*
 
 
