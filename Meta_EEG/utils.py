@@ -46,8 +46,8 @@ def meta_step(weights_before: OrderedDict, weights_after: OrderedDict, meta_weig
     return state_dict
 
 
-def meta_learner(model, task, epochs: int, batch_size: int, in_epochs: int, optimizer,
-                 meta_optimizer, lr1, lr2, device, mode='epoch', early_stopping=0, val=None):
+def meta_learner(model, subjects, epochs: int, batch_size: int, in_epochs: int, optimizer,
+                 meta_optimizer, lr1, lr2, device, mode='epoch', early_stopping=0, metadataset=None):
     if mode == 'epoch':
         n = 128   # todo resolve batch size
     elif mode == 'batch':
@@ -56,11 +56,21 @@ def meta_learner(model, task, epochs: int, batch_size: int, in_epochs: int, opti
         n = batch_size
     else:
         raise ValueError('incorrect meta-training mode')
+    if metadataset is None:
+        raise ValueError('Meta dataset not specified dor meta learner')
     flag = 0
     best_stat = 0
     best_stat_epoch = 0
     early_model = copy.deepcopy(model.state_dict())
     for iteration in range(epochs):
+        val = []
+        task = []
+        for i in range(len(subjects)):
+            train_tasks, vals = metadataset.all_data_subj(subj=subjects[i], n=n, mode=mode,
+                                                         early_stopping=early_stopping)
+            task.append(train_tasks)
+            if early_stopping != 0:
+                val.append(vals)
         meta_weights = deepcopy(model.state_dict())
         # Do SGD on this task
         task_len = len(task[0])
@@ -69,19 +79,19 @@ def meta_learner(model, task, epochs: int, batch_size: int, in_epochs: int, opti
             for i in range(len(task)):
                 dat = DataLoader(task[i][j], batch_size=n, drop_last=False, shuffle=False)
                 val_loader = None
-                if val is not None:
+                if early_stopping != 0:
                     val_loader = DataLoader(val[i], batch_size=len(val[i]), drop_last=False, shuffle=False)
                 model.load_state_dict(weights_before)
                 best_model, best_acc = train(model, optimizer, torch.nn.CrossEntropyLoss(), dat, val_loader,
                                              epochs=in_epochs, device=device, logging=False)
-                if val is not None:
+                if val_loader is not None:
                     weights_after = deepcopy(best_model.state_dict())
                 else:
                     weights_after = deepcopy(model.state_dict())
                 meta_weights = meta_step(weights_before=weights_before, weights_after=weights_after,
                                          meta_weights=meta_weights, outestepsize=lr1,
-                                         outestepsize1=lr2, epochs=epochs,
-                                         iteration=iteration, meta_optimizer=meta_optimizer, model=model,
+                                         outestepsize1=lr2, epochs=task_len,
+                                         iteration=j, meta_optimizer=meta_optimizer, model=model,
                                          task_len=len(task[i][j]) * len(task[i]))   # fixme size of task?
             if early_stopping != 0:
                 stat = 0.0
@@ -226,12 +236,8 @@ def meta_train(params: dict, model, metadataset: MetaDataset, wal_sub, path, nam
     # Generate task
     task_t = []
     val_task = []
-    for i in range(len(subjects)):
-        train_tasks, val = metadataset.all_data_subj(subj=subjects[i], n=n, mode=mode, early_stopping=early_stopping)
-        task_t.append(train_tasks)  # todo move dataloading to meta-learner
-        val_task.append(val)
-    model = meta_learner(model, task_t, params['oterepochs'], n, params['innerepochs'], optimizer, meta_optimizer,
-                         params['outerstepsize0'], params['outerstepsize1'], device, mode, early_stopping, val=val_task)
+    model = meta_learner(model, subjects, params['oterepochs'], n, params['innerepochs'], optimizer, meta_optimizer,
+                         params['outerstepsize0'], params['outerstepsize1'], device, mode, early_stopping, metadataset)
     torch.save(model.state_dict(), (path + str(name) + "-reptile.pkl"))
     if loging:
         print("meta train for sub: " + str(subjects) + "completed")
