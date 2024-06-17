@@ -2,6 +2,7 @@ import copy
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+import multiprocessing
 
 
 class inEEG_Net(nn.Module):
@@ -122,10 +123,14 @@ def train(model, optimizer, loss_fn, train_loader, val_loader=None, epochs=2, de
                 best_acc = num_correct / num_examples
 
             if logging:
-                print('Epoch: {}, Training Loss: {:.2f}, Validation Loss: {:.2f}, accuracy = {:.2f}'.format(epoch, training_loss, valid_loss, num_correct / num_examples))
+                print('in process ' + str(multiprocessing.current_process().name) +
+                      '\nEpoch: {}/{}, Training Loss: {:.2f}, Validation Loss: {:.2f}, '
+                      'accuracy = {:.2f}'.format(epoch, epochs, training_loss,
+                                                 valid_loss, num_correct / num_examples))
         else:
             if logging:
-                print('Epoch: {}, Training Loss: {:.2f}'.format(epoch, training_loss))
+                print('in process ' + str(multiprocessing.current_process().name) +
+                      '\nEpoch: {}/{}, Training Loss: {:.2f}'.format(epoch, epochs, training_loss))
     return best_model, best_acc
 
 

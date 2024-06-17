@@ -176,5 +176,21 @@ results*
 Meta_EEG/__pycache__/
 Meta_EEG/__pycache__/EEGnet_model.cpython-38.pyc
 Meta_EEG/__pycache__/utils.cpython-38.pyc
+f_test.py
+f2_test.py
+f2_test_config.yaml
+load_data.py
+models*
+wtf*
+.gpu_stats.tsv
+load*
+data*
+lee_test.py
+lee_test_config.yaml
+test_noteboock.ipynb
+tmp*
+exp*
+f22_test.py
+lee_exp
 
 
