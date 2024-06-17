@@ -130,7 +130,7 @@ def train(model, optimizer, loss_fn, train_loader, val_loader=None, epochs=2, de
         else:
             if logging:
                 print('in process ' + str(multiprocessing.current_process().name) +
-                      'Epoch: {}/{}, Training Loss: {:.2f}'.format(epoch, epochs, training_loss))
+                      '\nEpoch: {}/{}, Training Loss: {:.2f}'.format(epoch, epochs, training_loss))
     return best_model, best_acc
 
 

@@ -179,7 +179,7 @@ class MetaDataset:
         return (SubjDataset(train_data, self.file.name), SubjDataset(val_data, self.file.name),
                 SubjDataset(test_data, self.file.name))
 
-    def all_data_subj(self, subj: int, n: int, mode='epoch', early_stopping=0):
+    def all_data_subj(self, subj: int, n: int = 1, mode='epoch', early_stopping=0):
         tasks = []
         val = None
         if subj not in self.subjects:
@@ -188,7 +188,12 @@ class MetaDataset:
             dat = pd.concat([self.data[subj]['train'], self.data[subj]['test']], ignore_index=True)
         else:
             dat = pd.concat([self.data[subj]['train'], self.data[subj]['test']], ignore_index=True)
-            val = dat.sample(frac=0.1)
+            ny = dat['Y'].nunique(dropna=True)
+            num_d = dat.shape[0]
+            num_d = int(num_d * 0.1 / ny)
+            val = pd.DataFrame()
+            for i in range(ny):
+                val = pd.concat([val, dat.loc[dat['Y'] == i].tail(num_d)])
             dat = dat.drop(val.index)
             val = SubjDataset(val, self.file.name)
         if mode == 'epoch':
