@@ -221,7 +221,7 @@ def params_pretrain(trial, model, metadataset: MetaDataset, tr_sub, tst_sub, dou
         for i in range(2):
             model = meta_learner(model, t_s[i], int(params['oterepochs']/4), n, params['innerepochs'], params['in_lr'],
                                  meta_optimizer, params['outerstepsize0'], params['outerstepsize1'], device, mode,
-                                 0, metadataset)
+                                 0, metadataset, logging=False)
             stat = []
             for test_sub in t_s[-1-i]:
                 train_data, test_data, _ = metadataset.part_data_subj(subj=test_sub, n=n, rs=42)
