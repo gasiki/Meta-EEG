@@ -65,7 +65,7 @@ class inEEG_Net(nn.Module):
 
 def model_from_params(params: dict):
     """
-    :param - params: dict with model params in this lib all models have model.defined_params, from which they can be
+    :param params: - params: dict with model params in this lib all models have model.defined_params, from which they can be
     recreated with untrained weights
     :return: - model which has defined params and type
     """
