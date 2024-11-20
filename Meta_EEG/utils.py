@@ -48,7 +48,7 @@ def meta_step(weights_before: OrderedDict, weights_after: OrderedDict, meta_weig
 
 
 # todo: add the subdroprate call for exp
-def meta_weights_init(model, subjects, meta_dataset, sub_drop_rate=0.15, in_lr=0.0063, in_epochs=20):
+def meta_weights_init(model, subjects, meta_dataset, sub_drop_rate=0.3, in_lr=0.0063, in_epochs=20):
     print('Meta weights initialization for subjects: {}'.format(subjects))
     naive_weights = deepcopy(model.state_dict())
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -220,7 +220,7 @@ def params_pretrain(trial, model, metadataset: MetaDataset, tr_sub, tst_sub, dou
                 'oterepochs': trial.suggest_int('oterepochs', 4, 20),
                 'outerstepsize0': trial.suggest_float('outerstepsize0', 0.1, 0.9),
                 'outerstepsize1': trial.suggest_float('outerstepsize1', 0.1, 0.9),
-                'in_lr': trial.suggest_float('in_lr', 0.000006, 0.005),
+                'in_lr': trial.suggest_float('in_lr', 0.0000006, 0.005),
                 'in_datasamples': trial.suggest_int('in_datasamples', 4, 50)
             }
         else:
@@ -502,8 +502,9 @@ def aftrain_params(metadataset: MetaDataset, model, tst_subj: list, trials: int,
 
 
 def aftrain(target_sub, model, af_params, metadataset: MetaDataset, iterations=1, length=50, logging=False,
-            experiment_name='experiment', last_layer=False):
+            experiment_name='experiment', model_name='model', last_layer=False):
     dt = {}
+    raw_dt = {}
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     model = deepcopy(model)
     model.to(device)
@@ -519,12 +520,17 @@ def aftrain(target_sub, model, af_params, metadataset: MetaDataset, iterations=1
         data_points = []
         stat = []
         rstat = []
+        in_raw_dt = {'raw_stat': [], 'raw_rstat': [], 'raw_true': [], 'raw_rtrue': []}
         for k in range(iterations):
             if logging:
                 print('afftrain iteration ' + str(k+1) + ' of ' + str(iterations) + ' started')
             in_data_points = []
             in_stat = []
             r_in_stat = []
+            in_raw_stat = []
+            in_raw_rstat = []
+            in_raw_true = []
+            in_raw_rtrue = []
             ji = 0
             j = 0
             while cn * 2 ** ji < length + 1:
@@ -548,6 +554,8 @@ def aftrain(target_sub, model, af_params, metadataset: MetaDataset, iterations=1
                         inputs, targets = batch
                     inputs = inputs.to(device=device, dtype=torch.float)
                     output = model(inputs)
+                    in_raw_rstat.append(np.array(output.to(torch.device("cpu"))))
+                    in_raw_rtrue.append(np.array(targets.to(torch.device("cpu"))))
                     targets = targets.type(torch.LongTensor)
                     targets = targets.to(device=device, dtype=torch.float)
                     correct = torch.eq(torch.max(F.softmax(output, dim=1), dim=1)[1], targets)
@@ -570,6 +578,8 @@ def aftrain(target_sub, model, af_params, metadataset: MetaDataset, iterations=1
                         inputs, targets = batch
                     inputs = inputs.to(device=device, dtype=torch.float)
                     output = model(inputs)
+                    in_raw_stat.append(np.array(output.to(torch.device("cpu"))))
+                    in_raw_true.append(np.array(targets.to(torch.device("cpu"))))
                     targets = targets.type(torch.LongTensor)
                     targets = targets.to(device=device, dtype=torch.float)
                     correct = torch.eq(torch.max(F.softmax(output, dim=1), dim=1)[1], targets)
@@ -579,9 +589,14 @@ def aftrain(target_sub, model, af_params, metadataset: MetaDataset, iterations=1
             rstat.append(r_in_stat)
             stat.append(in_stat)
             data_points.append(in_data_points)
+            in_raw_dt['raw_stat'].append(in_raw_stat)
+            in_raw_dt['raw_rstat'].append(in_raw_rstat)
+            in_raw_dt['raw_true'].append(in_raw_true)
+            in_raw_dt['raw_rtrue'].append(in_raw_rtrue)
         dt[str(sub) + '_baseline_data'] = deepcopy(stat)
         dt[str(sub) + '_reptile_data'] = deepcopy(rstat)
         dt[str(sub) + '_datapoints'] = deepcopy(data_points)
+        raw_dt[str(sub)] = deepcopy(in_raw_dt)
     if logging:
         print('aftraining complete')
     path = pathlib.Path(pathlib.Path.cwd(), experiment_name)
@@ -599,9 +614,9 @@ def aftrain(target_sub, model, af_params, metadataset: MetaDataset, iterations=1
         a_accr.append(accr)
         stdr = np.std(np.array(dt[str(sub) + '_reptile_data']), axis=0)
         num = dt[str(sub) + '_datapoints'][0]
-        ax[i].plot(num, acc, label='EEGNet')
+        ax[i].plot(num, acc, label='baseline ' + model_name)
         ax[i].fill_between(num, acc - std, acc + std, alpha=0.2)
-        ax[i].plot(num, accr, label='EEGNet with Reptile')
+        ax[i].plot(num, accr, label=model_name + ' with Reptile')
         ax[i].fill_between(num, accr - stdr, accr + stdr, alpha=0.2)
         ax[i].set_title('Learning curve for subject' + str(sub))
         ax[i].set_xlabel('Train data size')
@@ -614,13 +629,14 @@ def aftrain(target_sub, model, af_params, metadataset: MetaDataset, iterations=1
     accr = np.mean(a_accr, axis=0)
     stdr = np.std(a_accr, axis=0)
     num = dt[str(sub) + '_datapoints'][0]
-    ax[i].plot(num, acc, label='EEGNet')
+    ax[i].plot(num, acc, label='baseline ' + model_name)
     ax[i].fill_between(num, acc - std, acc + std, alpha=0.2)
-    ax[i].plot(num, accr, label='EEGNet with Reptile')
+    ax[i].plot(num, accr, label=model_name + ' with Reptile')
     ax[i].fill_between(num, accr - stdr, accr + stdr, alpha=0.2)
     ax[i].set_title('Mean learning curve')
     ax[i].set_xlabel('Train data size')
     ax[i].set_ylabel('ACC')
     ax[i].legend(loc='best')
     joblib.dump(dt, pathlib.Path(path, 'all_data_af_test.sav'))
+    joblib.dump(raw_dt, pathlib.Path(path, 'all_data_raw_af_test.sav'))
     plt.savefig(pathlib.Path(path, "af_Learn_ACC_ALL" + ".pdf"), format="pdf", bbox_inches="tight")
